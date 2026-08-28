@@ -1,0 +1,128 @@
+name: Release
+
+# Builds a universal (Apple Silicon + Intel) .app, signs it with a Developer ID
+# certificate, notarizes and staples the app, wraps it in a drag-to-Applications
+# .dmg, notarizes and staples the .dmg, and attaches it to the GitHub Release
+# for the pushed tag.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   BUILD_CERTIFICATE_BASE64   - Developer ID Application cert exported as .p12, base64-encoded
+#   P12_PASSWORD               - password used when exporting the .p12
+#   KEYCHAIN_PASSWORD          - any throwaway string for the temporary CI keychain
+#   SIGNING_IDENTITY           - e.g. "Developer ID Application: Your Name (TEAMID)"
+#   NOTARYTOOL_APPLE_ID        - your Apple ID email
+#   NOTARYTOOL_PASSWORD        - app-specific password (appleid.apple.com → Sign-In and Security)
+#   NOTARYTOOL_TEAM_ID         - your 10-character Apple Developer Team ID
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode.app
+
+      - name: Import signing certificate
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          CERT_PATH="$RUNNER_TEMP/cert.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          security import "$CERT_PATH" -P "$P12_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain
+
+      - name: Build universal app
+        run: |
+          xcodebuild -project Termini.xcodeproj -scheme Termini \
+            -configuration Release \
+            -derivedDataPath build/dd \
+            ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="${{ secrets.SIGNING_IDENTITY }}" \
+            OTHER_CODE_SIGN_FLAGS="--timestamp --options=runtime" \
+            build
+
+      - name: Notarize app
+        env:
+          NOTARYTOOL_APPLE_ID: ${{ secrets.NOTARYTOOL_APPLE_ID }}
+          NOTARYTOOL_PASSWORD: ${{ secrets.NOTARYTOOL_PASSWORD }}
+          NOTARYTOOL_TEAM_ID: ${{ secrets.NOTARYTOOL_TEAM_ID }}
+        run: |
+          APP="build/dd/Build/Products/Release/Termini.app"
+          # notarytool needs an archive, so zip the app just for submission.
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/Termini.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/Termini.zip" \
+            --apple-id "$NOTARYTOOL_APPLE_ID" \
+            --password "$NOTARYTOOL_PASSWORD" \
+            --team-id "$NOTARYTOOL_TEAM_ID" \
+            --wait
+
+      - name: Staple app
+        run: xcrun stapler staple "build/dd/Build/Products/Release/Termini.app"
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Create DMG
+        run: |
+          APP="build/dd/Build/Products/Release/Termini.app"
+          DMG="build/export/Termini.dmg"
+          mkdir -p build/export
+          rm -f "$DMG"
+          # create-dmg lays out the drag-to-Applications window and signs the image.
+          # It can exit non-zero while still producing a valid .dmg (e.g. when it
+          # can't apply Finder window styling on the headless runner), so verify
+          # the file exists rather than trusting the exit code.
+          create-dmg \
+            --volname "Termini" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "Termini.app" 150 190 \
+            --hide-extension "Termini.app" \
+            --app-drop-link 450 190 \
+            --codesign "${{ secrets.SIGNING_IDENTITY }}" \
+            "$DMG" "$APP" || true
+          test -f "$DMG"
+
+      - name: Notarize DMG
+        env:
+          NOTARYTOOL_APPLE_ID: ${{ secrets.NOTARYTOOL_APPLE_ID }}
+          NOTARYTOOL_PASSWORD: ${{ secrets.NOTARYTOOL_PASSWORD }}
+          NOTARYTOOL_TEAM_ID: ${{ secrets.NOTARYTOOL_TEAM_ID }}
+        run: |
+          xcrun notarytool submit build/export/Termini.dmg \
+            --apple-id "$NOTARYTOOL_APPLE_ID" \
+            --password "$NOTARYTOOL_PASSWORD" \
+            --team-id "$NOTARYTOOL_TEAM_ID" \
+            --wait
+
+      - name: Staple DMG
+        run: xcrun stapler staple "build/export/Termini.dmg"
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/export/Termini.dmg

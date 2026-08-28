@@ -51,12 +51,23 @@ If you find Termini useful, consider giving it a ⭐ — it helps others discove
 **Login item** — Optionally launch Termini automatically at login via the Settings popover.
 
 
-## Requirements
+## Installation
+
+### Download (recommended)
+
+1. Go to the [latest release](https://github.com/ModernProgrammer/Termini/releases/latest).
+2. Download `Termini.dmg` and open it.
+3. Drag **Termini** into the `Applications` folder shown in the window.
+4. Launch it from `/Applications` — Termini appears in your menu bar.
+
+The download is a universal build (Apple Silicon + Intel) and is notarized by Apple, so it opens without a Gatekeeper warning.
+
+### Build from source
+
+Requirements:
 
 - macOS (Apple Silicon or Intel)
 - Xcode 15+
-- [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) (Swift Package dependency)
-
-## Building
+- [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) (resolved automatically as a Swift Package dependency)
 
 Open `Termini.xcodeproj` in Xcode and build the `Termini` scheme. The app will appear in your menu bar on launch.
