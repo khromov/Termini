@@ -298,11 +298,86 @@ final class TerminalStore {
     }
 }
 
+// MARK: - WindowPinController
+
+/// Keeps the MenuBarExtra window on top of other windows when pinned.
+/// The system normally hides the window the moment it loses focus; when
+/// pinned we float it and re-order it front whenever it tries to go away.
+@Observable
+final class WindowPinController {
+    var isPinned: Bool = false {
+        didSet { apply() }
+    }
+
+    @ObservationIgnored private weak var window: NSWindow?
+    @ObservationIgnored private var resignObserver: Any?
+    @ObservationIgnored private var defaultLevel: NSWindow.Level = .statusBar
+
+    func attach(_ window: NSWindow) {
+        guard self.window !== window else { return }
+        self.window = window
+        defaultLevel = window.level
+
+        if let observer = resignObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        resignObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResignKeyNotification,
+            object: window, queue: .main
+        ) { [weak self] _ in
+            guard let self, self.isPinned, let window = self.window else { return }
+            // The system orders the panel out right after resign — bring it back.
+            DispatchQueue.main.async { window.orderFrontRegardless() }
+        }
+        apply()
+    }
+
+    private func apply() {
+        guard let window else { return }
+        if isPinned {
+            window.level = .floating
+            window.hidesOnDeactivate = false
+            window.collectionBehavior.insert([.canJoinAllSpaces, .fullScreenAuxiliary])
+            window.orderFrontRegardless()
+        } else {
+            window.level = defaultLevel
+        }
+    }
+
+    deinit {
+        if let observer = resignObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+}
+
+// MARK: - WindowAccessor
+
+/// Invisible view that hands the hosting NSWindow to a callback.
+private struct WindowAccessor: NSViewRepresentable {
+    let onWindow: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            if let window = view.window { onWindow(window) }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            if let window = nsView.window { onWindow(window) }
+        }
+    }
+}
+
 // MARK: - ContentView
 
 struct ContentView: View {
     @Environment(TerminalStore.self) var store
     @State private var showSettings = false
+    @State private var pinController = WindowPinController()
 
     var body: some View {
         ZStack {
@@ -317,6 +392,7 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.4), value: store.hasSeenWelcome)
+        .background(WindowAccessor { pinController.attach($0) })
     }
 
     // MARK: Terminal content
@@ -407,6 +483,19 @@ struct ContentView: View {
 
             // Open in external terminal
             openButton
+
+            // Lock (keep window on top)
+            Button { pinController.isPinned.toggle() } label: {
+                Image(systemName: pinController.isPinned ? "lock.fill" : "lock.open")
+                    .font(.system(size: 10, weight: .medium))
+                    .frame(width: 26, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(pinController.isPinned ? Color.accentColor : Color.secondary)
+            .help(pinController.isPinned
+                  ? "Unlock — Termini hides when you click away"
+                  : "Lock — keep Termini on top of other windows")
 
             // Settings
             Button { showSettings.toggle() } label: {
