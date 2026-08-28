@@ -87,7 +87,21 @@ jobs:
             --wait
 
       - name: Staple app
-        run: xcrun stapler staple "build/dd/Build/Products/Release/Termini.app"
+        run: |
+          # notarytool reports "Accepted" before the ticket finishes propagating
+          # to Apple's CDN, so stapler can briefly get "Record not found". Retry
+          # with backoff until the ticket is available.
+          APP="build/dd/Build/Products/Release/Termini.app"
+          for i in $(seq 1 10); do
+            if xcrun stapler staple "$APP"; then
+              echo "Stapled on attempt $i"
+              exit 0
+            fi
+            echo "Ticket not ready (attempt $i); waiting 30s..."
+            sleep 30
+          done
+          echo "Stapling still failing after retries" >&2
+          exit 1
 
       - name: Install create-dmg
         run: brew install create-dmg
@@ -127,7 +141,19 @@ jobs:
             --wait
 
       - name: Staple DMG
-        run: xcrun stapler staple "build/export/Termini.dmg"
+        run: |
+          # Same propagation race as the app staple — retry until the ticket lands.
+          DMG="build/export/Termini.dmg"
+          for i in $(seq 1 10); do
+            if xcrun stapler staple "$DMG"; then
+              echo "Stapled on attempt $i"
+              exit 0
+            fi
+            echo "Ticket not ready (attempt $i); waiting 30s..."
+            sleep 30
+          done
+          echo "Stapling still failing after retries" >&2
+          exit 1
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
