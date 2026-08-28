@@ -24,13 +24,20 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -switch /Applications/Xcode.app
+      - name: Select newest Xcode
+        run: |
+          # The project is saved in a recent Xcode project format (objectVersion
+          # 77), so pick the newest non-beta Xcode installed on the runner rather
+          # than the image default, which may be too old to open it.
+          LATEST=$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -vi beta | sort -V | tail -1)
+          echo "Selecting $LATEST"
+          sudo xcode-select -switch "$LATEST/Contents/Developer"
+          xcodebuild -version
 
       - name: Import signing certificate
         env:
