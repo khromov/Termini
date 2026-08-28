@@ -68,6 +68,7 @@ jobs:
             ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="${{ secrets.SIGNING_IDENTITY }}" \
+            ENABLE_HARDENED_RUNTIME=YES \
             OTHER_CODE_SIGN_FLAGS="--timestamp --options=runtime" \
             build
 
@@ -80,11 +81,25 @@ jobs:
           APP="build/dd/Build/Products/Release/Termini.app"
           # notarytool needs an archive, so zip the app just for submission.
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/Termini.zip"
-          xcrun notarytool submit "$RUNNER_TEMP/Termini.zip" \
+          # submit --wait can exit 0 even when Apple returns "Invalid", so parse
+          # the JSON result and fail loudly (with the reject log) unless Accepted.
+          RESULT=$(xcrun notarytool submit "$RUNNER_TEMP/Termini.zip" \
             --apple-id "$NOTARYTOOL_APPLE_ID" \
             --password "$NOTARYTOOL_PASSWORD" \
             --team-id "$NOTARYTOOL_TEAM_ID" \
-            --wait
+            --wait --output-format json)
+          echo "$RESULT"
+          SUBID=$(echo "$RESULT" | jq -r '.id')
+          STATUS=$(echo "$RESULT" | jq -r '.status')
+          echo "Notarization submission $SUBID finished with status: $STATUS"
+          if [ "$STATUS" != "Accepted" ]; then
+            echo "=== Apple notarization log ==="
+            xcrun notarytool log "$SUBID" \
+              --apple-id "$NOTARYTOOL_APPLE_ID" \
+              --password "$NOTARYTOOL_PASSWORD" \
+              --team-id "$NOTARYTOOL_TEAM_ID" || true
+            exit 1
+          fi
 
       - name: Staple app
         run: |
