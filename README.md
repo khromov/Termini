@@ -66,8 +66,19 @@ The download is a universal build (Apple Silicon + Intel) and is notarized by Ap
 
 Requirements:
 
-- macOS (Apple Silicon or Intel)
-- Xcode 15+
-- [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) (resolved automatically as a Swift Package dependency)
+- macOS 26+ (Apple Silicon or Intel)
+- Xcode 26+ — the project targets macOS 26
+- Xcode's Metal Toolchain component — SwiftTerm compiles Metal shaders, and newer Xcode versions no longer bundle the toolchain. Install it once with `xcodebuild -downloadComponent MetalToolchain` (or Xcode → Settings → Components).
+- [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) and [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) (resolved automatically as Swift Package dependencies)
 
 Open `Termini.xcodeproj` in Xcode and build the `Termini` scheme. The app will appear in your menu bar on launch.
+
+The project is set up with the maintainer's development team, so for your own builds pick your team (or **Sign to Run Locally**) under the target's *Signing & Capabilities* tab. From the command line you can skip that and ad-hoc sign instead:
+
+```sh
+xcodebuild -project Termini.xcodeproj -scheme Termini -configuration Debug \
+  -derivedDataPath build/dd DEVELOPMENT_TEAM= CODE_SIGN_IDENTITY=- build
+open build/dd/Build/Products/Debug/Termini.app
+```
+
+There is no test suite yet.
