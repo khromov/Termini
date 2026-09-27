@@ -108,7 +108,8 @@ final class MenuBarController: NSObject {
         watchForOutsideClicks()
     }
 
-    private func hide() {
+    /// Hides the panel; its terminal sessions keep running.
+    func hide() {
         panel.orderOut(nil)
         if let monitor = outsideClickMonitor {
             NSEvent.removeMonitor(monitor)

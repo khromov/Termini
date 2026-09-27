@@ -36,7 +36,7 @@ If you find Termini useful, consider giving it a ⭐ — it helps others discove
 
 **Global shortcut** — Press ⌘E in any app to open or hide Termini. Record a different shortcut, or clear it, in Settings.
 
-**Multi-tab sessions** — Open multiple terminal tabs in a single window (⌘T opens a new one). Each tab tracks the current working directory and displays it as the tab title, updated in real time via `proc_pidinfo`.
+**Multi-tab sessions** — Open multiple terminal tabs in a single window (⌘T opens a new one, ⌘W closes it — on the last tab, ⌘W just hides the window). Each tab tracks the current working directory and displays it as the tab title, updated in real time via `proc_pidinfo`.
 
 **Themes** — Choose from six built-in color schemes: Classic, Dracula, Nord, Solarized, Gruvbox, and Matrix. A custom theme option lets you set your own background and foreground colors via hex input.
 

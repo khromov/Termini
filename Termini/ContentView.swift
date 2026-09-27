@@ -270,6 +270,11 @@ final class TerminalStore {
 
     func removeTab(at index: Int) {
         guard tabs.count > 1 else { return }
+        // End the tab's shell too — dropping the tab alone leaves it running.
+        // Hang it up like closing a terminal window does; interactive shells
+        // ignore the SIGTERM that SwiftTerm's terminate() sends.
+        let shellPid = tabs[index].terminalView.process.shellPid
+        if shellPid > 0 { kill(shellPid, SIGHUP) }
         tabs.remove(at: index)
         if activeTabIndex >= tabs.count { activeTabIndex = tabs.count - 1 }
     }
@@ -323,8 +328,28 @@ struct ContentView: View {
             .frame(width: ts.width, height: ts.height)
         }
         .animation(.spring(duration: 0.35, bounce: 0.1), value: store.windowSize)
+        .background {
+            // Invisible, just carries the ⌘W shortcut.
+            Button("Close Tab", action: closeActiveTab)
+                .keyboardShortcut("w", modifiers: .command)
+                .opacity(0)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
         .onAppear { focusActiveTab() }
-        .onChange(of: store.activeTabIndex) { _, _ in focusActiveTab() }
+        // Follow the tab on screen rather than the index: closing the active tab
+        // keeps the index but shows its neighbour, which needs focus too.
+        .onChange(of: store.activeTab.id) { _, _ in focusActiveTab() }
+    }
+
+    /// Closes the active tab. The last tab is never closed — ⌘W just hides the
+    /// window, keeping its shell session running.
+    private func closeActiveTab() {
+        if store.tabs.count > 1 {
+            store.removeTab(at: store.activeTabIndex)
+        } else {
+            menuBar.hide()
+        }
     }
 
     private var toolbarIcon: NSImage {
